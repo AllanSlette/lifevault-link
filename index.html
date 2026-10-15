@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.plaid.com; frame-src https://cdn.plaid.com; connect-src https://*.plaid.com; style-src 'unsafe-inline'; img-src data: https://*.plaid.com; base-uri 'none'; form-action 'none'">
+<title>Link a bank</title>
+<style>
+  :root { --bg:#fff; --fg:#14181f; --muted:#5b6472; --line:#d9dde4; --accent:#1a56db; --ok:#0a7d3b; --err:#b42318; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151b; --fg:#e8ebf0; --muted:#9aa4b2; --line:#2b313c; --accent:#6ea0ff; --ok:#4cc38a; --err:#ff8a80; }
+  }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width:34rem; margin:0 auto; padding:2.5rem 1rem; }
+  h1 { font-size:1.4rem; margin:0 0 .25rem; }
+  p { color:var(--muted); margin:.25rem 0 1rem; }
+  input, textarea { width:100%; box-sizing:border-box; padding:.6rem; border:1px solid var(--line);
+    border-radius:6px; background:transparent; color:var(--fg); font:inherit; }
+  textarea { font-family:ui-monospace, monospace; font-size:.85rem; height:5.5rem; }
+  button { padding:.6rem 1rem; border:0; border-radius:6px; background:var(--accent); color:#fff;
+    font:inherit; cursor:pointer; margin-top:.5rem; }
+  button.secondary { background:transparent; color:var(--accent); border:1px solid var(--line); }
+  .status { margin-top:1rem; }
+  .ok { color:var(--ok); } .err { color:var(--err); }
+  .hidden { display:none; }
+  small { color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Link a bank</h1>
+  <p>Personal tool for my lifevault data warehouse. Nothing on this page is stored on a server.</p>
+
+  <section id="start" class="hidden">
+    <label for="lt">Link token (from <code>lifevault auth plaid</code>)</label>
+    <input id="lt" type="password" autocomplete="off" spellcheck="false">
+    <button id="open">Open Plaid Link</button>
+  </section>
+
+  <section id="result" class="hidden">
+    <p class="ok" id="okmsg"></p>
+    <label for="pt">Public token: copy it, paste it into the terminal, then close this tab.</label>
+    <textarea id="pt" readonly></textarea>
+    <button id="copy">Copy</button>
+    <p><small>This token is single-use and expires within minutes.</small></p>
+  </section>
+
+  <p class="status" id="status"></p>
+</main>
+
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script>
+(function () {
+  "use strict";
+  // The link_token must survive the bank's OAuth redirect (it is the only thing kept client-side).
+  var KEY = "lifevault_link_token";
+  var $ = function (id) { return document.getElementById(id); };
+
+  function store(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
+  function load() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
+  function say(msg, cls) { var s = $("status"); s.textContent = msg; s.className = "status " + (cls || ""); }
+
+  function showResult(publicToken, institution) {
+    clear();
+    $("start").classList.add("hidden");
+    $("result").classList.remove("hidden");
+    $("okmsg").textContent = "Linked" + (institution ? " " + institution : "") + ".";
+    $("pt").value = publicToken;
+  }
+
+  function launch(token, receivedRedirectUri) {
+    var config = {
+      token: token,
+      onSuccess: function (publicToken, metadata) {
+        showResult(publicToken, metadata && metadata.institution && metadata.institution.name);
+      },
+      onExit: function (err, metadata) {
+        // Log identifiers support needs, never tokens (link_session_id, error codes only).
+        var id = metadata && metadata.link_session_id;
+        say(err ? ("Link exited: " + err.error_code + (id ? " (session " + id + ")" : ""))
+                : "Link closed without finishing.", err ? "err" : "");
+      }
+    };
+    if (receivedRedirectUri) config.receivedRedirectUri = receivedRedirectUri;
+    Plaid.create(config).open();
+  }
+
+  var params = new URLSearchParams(window.location.search);
+
+  if (params.has("oauth_state_id")) {
+    // Returning from a bank's OAuth page: resume with the SAME link_token.
+    var saved = load();
+    if (!saved) { say("Link session lost after the bank redirect. Start again from the terminal.", "err"); return; }
+    launch(saved, window.location.href);
+    return;
+  }
+
+  // Fresh start: token arrives in the URL fragment (never sent to any server), then is removed.
+  var frag = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  var fromHash = frag.get("lt");
+  if (fromHash) {
+    history.replaceState(null, "", window.location.pathname);
+    $("lt").value = fromHash;
+  }
+  $("start").classList.remove("hidden");
+
+  $("open").addEventListener("click", function () {
+    var t = $("lt").value.trim();
+    if (!t) { say("Paste the link token first.", "err"); return; }
+    store(t);
+    launch(t);
+  });
+  $("copy").addEventListener("click", function () {
+    var el = $("pt"); el.select();
+    if (navigator.clipboard) navigator.clipboard.writeText(el.value);
+    say("Copied.", "ok");
+  });
+})();
+</script>
+</body>
+</html>
