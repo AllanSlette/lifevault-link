@@ -42,7 +42,7 @@
 
   <section id="result" class="hidden">
     <p class="ok" id="okmsg"></p>
-    <label for="pt">Public token: copy it, paste it into the terminal, then close this tab.</label>
+    <label for="pt">Public token: click Copy, then in the terminal press Enter (or paste with Cmd+V). Then close this tab.</label>
     <textarea id="pt" readonly></textarea>
     <button id="copy">Copy</button>
     <p><small>This token is single-use and expires within minutes.</small></p>
@@ -114,10 +114,24 @@
     store(t);
     launch(t);
   });
+  // Copy reports success only if it really worked; otherwise the box stays selected so the
+  // owner can press Cmd/Ctrl+C. (A false "Copied." leaves old clipboard text in place.)
+  function selectToken() { var el = $("pt"); el.focus(); el.select(); el.setSelectionRange(0, el.value.length); return el; }
+  $("pt").addEventListener("click", selectToken);
+  $("pt").addEventListener("focus", selectToken);
   $("copy").addEventListener("click", function () {
-    var el = $("pt"); el.select();
-    if (navigator.clipboard) navigator.clipboard.writeText(el.value);
-    say("Copied.", "ok");
+    var el = selectToken();
+    function manual() { say("Could not copy automatically. The token is selected: press Cmd+C (Ctrl+C on Windows).", "err"); }
+    function legacy() {
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      if (ok) say("Copied.", "ok"); else manual();
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(el.value).then(function () { say("Copied.", "ok"); }, legacy);
+    } else {
+      legacy();
+    }
   });
 })();
 </script>
